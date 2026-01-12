@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BwE: Multi-Region Policy Sim</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f2f5; padding: 20px; display: flex; flex-direction: column; align-items: center; color: #1a1f36; }
+        .controls, .readme-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; width: 900px; }
+        .container { display: flex; gap: 20px; justify-content: center; width: 950px; margin-bottom: 30px; }
+        .sim-box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); flex: 1; }
+
+        h1 { margin: 0 0 10px 0; font-size: 1.8rem; text-align: center; }
+        h2 { font-size: 1rem; color: #1a73e8; margin-top: 0; border-bottom: 2px solid #e8f0fe; padding-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* Simulation Styles */
+        .task-row { margin: 15px 0; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+        .bar-container { background: #e0e0e0; height: 26px; border-radius: 6px; overflow: hidden; position: relative; margin-top: 8px; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+        .bar-fill-guaranteed { height: 100%; background: #d93025; transition: width 0.3s ease; border-right: 2px solid rgba(0,0,0,0.2); z-index: 2; }
+        .bar-fill-best-effort { height: 100%; background: #1e8e3e; transition: width 0.3s ease; opacity: 0.8; z-index: 1; }
+        .demand-marker { position: absolute; top: 0; border-right: 2px dashed #000; height: 100%; z-index: 5; opacity: 0.4; }
+        .guaranteed-boundary { position: absolute; top: 0; border-right: 2px solid #d93025; height: 100%; z-index: 4; }
+
+        /* UI Elements */
+        .btn { padding: 10px 18px; cursor: pointer; border: none; border-radius: 6px; font-weight: 600; margin: 0 5px; transition: all 0.2s; }
+        .btn-primary { background: #1a73e8; color: white; }
+        .btn-outline { background: white; color: #1a73e8; border: 2px solid #1a73e8; }
+        .capacity-control { display: flex; align-items: center; justify-content: center; gap: 15px; margin: 15px 0; }
+        .cap-display { font-size: 1.8rem; font-weight: 800; color: #1a73e8; min-width: 140px; }
+        .legend { display: flex; gap: 15px; font-size: 0.85rem; justify-content: center; margin-bottom: 15px; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .dot { width: 12px; height: 12px; border-radius: 3px; }
+
+        /* README Styles */
+        .readme-box h3 { color: #1a1f36; margin-top: 20px; border-left: 4px solid #1a73e8; padding-left: 10px; }
+        .readme-box p, .readme-box li { color: #4f566b; line-height: 1.6; font-size: 0.95rem; }
+        .readme-box code { background: #f1f3f5; padding: 2px 5px; border-radius: 4px; font-family: monospace; }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let totalCapacity = 1000;
+            let services = [];
+
+            window.generateServices = function() {
+                services = [];
+                const names = ["Gmail", "YouTube", "Search", "Cloud", "Maps", "Ads"];
+                for (let i = 0; i < names.length; i++) {
+                    const gDemand = Math.floor(Math.random() * 120) + 60;
+                    const beDemand = Math.floor(Math.random() * 250) + 40;
+                    services.push({
+                        id: names[i],
+                        gDemand: gDemand,
+                        beDemand: beDemand,
+                        totalDemand: gDemand + beDemand,
+                        gAlloc: 0,
+                        beAlloc: 0
+                    });
+                }
+                runBwE();
+            };
+
+            window.adjustCapacity = function(amount) {
+                totalCapacity = Math.max(0, totalCapacity + amount);
+                document.getElementById('capDisplay').innerText = totalCapacity;
+                runBwE();
+            };
+
+            function runBwE() {
+                let remaining = totalCapacity;
+                services.forEach(s => { s.gAlloc = 0; s.beAlloc = 0; });
+
+                // STAGE 1: Priority 10 (Guaranteed)
+                let activeG = [...services];
+                while (remaining > 0.1 && activeG.length > 0) {
+                    let share = remaining / activeG.length;
+                    let minGap = Math.min(...activeG.map(s => s.gDemand - s.gAlloc));
+                    let inc = Math.min(share, minGap);
+                    activeG.forEach(s => { s.gAlloc += inc; remaining -= inc; });
+                    activeG = activeG.filter(s => s.gAlloc < s.gDemand);
+                    if (inc === share) { remaining = 0; break; }
+                }
+
+                // STAGE 2: Priority 1 (Best-Effort)
+                let activeBE = [...services];
+                while (remaining > 0.1 && activeBE.length > 0) {
+                    let share = remaining / activeBE.length;
+                    let minGap = Math.min(...activeBE.map(s => s.beDemand - s.beAlloc));
+                    let inc = Math.min(share, minGap);
+                    activeBE.forEach(s => { s.beAlloc += inc; remaining -= inc; });
+                    activeBE = activeBE.filter(s => s.beAlloc < s.beDemand);
+                    if (inc === share) { remaining = 0; break; }
+                }
+                render();
+            }
+
+            function render() {
+                const list = document.getElementById('service-list');
+                list.innerHTML = '';
+                let totalUtil = 0;
+                services.forEach(s => {
+                    totalUtil += (s.gAlloc + s.beAlloc);
+                    const row = document.createElement('div');
+                    row.className = 'task-row';
+                    const gPct = (s.gAlloc / 500) * 100;
+                    const bePct = (s.beAlloc / 500) * 100;
+                    const gBoundaryPct = (s.gDemand / 500) * 100;
+                    const totalDemandPct = (s.totalDemand / 500) * 100;
+
+                    row.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; font-size:0.9rem; margin-bottom:4px;">
+                            <strong>${s.id}</strong>
+                            <span><b>${Math.round(s.gAlloc + s.beAlloc)}</b> / ${s.totalDemand} Mbps</span>
+                        </div>
+                        <div class="bar-container">
+                            <div class="guaranteed-boundary" style="left:${gBoundaryPct}%"></div>
+                            <div class="demand-marker" style="left:${totalDemandPct}%"></div>
+                            <div class="bar-fill-guaranteed" style="width:${gPct}%"></div>
+                            <div class="bar-fill-best-effort" style="width:${bePct}%"></div>
+                        </div>
+                    `;
+                    list.appendChild(row);
+                });
+                document.getElementById('totalUtil').innerText = Math.round(totalUtil) + " Mbps";
+            }
+            generateServices();
+        });
+    </script>
+</head>
+<body>
+
+    <div class="controls">
+        <h1>BwE: WAN Bandwidth Allocation Simulator</h1>
+        <div class="legend">
+            <div class="legend-item"><div class="dot" style="background:#d93025"></div> Guaranteed (High Priority)</div>
+            <div class="legend-item"><div class="dot" style="background:#1e8e3e"></div> Best-Effort (Low Priority)</div>
+        </div>
+        <div class="capacity-control">
+            <button class="btn btn-outline" onclick="adjustCapacity(-50)">− 50 Mbps</button>
+            <div class="cap-display"><span id="capDisplay">1000</span></div>
+            <button class="btn btn-outline" onclick="adjustCapacity(50)">+ 50 Mbps</button>
+        </div>
+        <button class="btn btn-primary" onclick="generateServices()">Shuffle Service Demands</button>
+    </div>
+
+    <div class="container">
+        <div class="sim-box">
+            <h2>Live Allocation Engine</h2>
+            <div id="service-list"></div>
+            <div style="margin-top:15px; font-weight:bold; text-align:right;">Total Usage: <span id="totalUtil">0</span></div>
+        </div>
+    </div>
+
+    <div class="readme-box">
+        <h2>Documentation: How BwE Works</h2>
+
+        <p>This application demonstrates the <strong>Bandwidth Enforcer (BwE)</strong> model used by Google to manage its private Wide Area Network (WAN). Unlike simple fairness, BwE uses hierarchical, priority-aware policies to ensure critical services never drop below their minimum needs.</p>
+
+        <h3>1. Multi-Region Priority Functions</h3>
+        <p>In BwE, each service defines its demand as a <em>Bandwidth Function</em>. Instead of a single priority, a service like YouTube has two regions:</p>
+        <ul>
+            <li><strong>Guaranteed (Red):</strong> The minimum bandwidth required for basic functionality. Allocated at <code>Priority 10</code>.</li>
+            <li><strong>Best-Effort (Green):</strong> Extra bandwidth for higher quality or pre-fetching. Allocated at <code>Priority 1</code>.</li>
+        </ul>
+
+        <h3>2. Priority-Aware Water-filling</h3>
+        <p>The allocation engine runs in two distinct stages to maximize <strong>utility</strong> rather than just bits:</p>
+        <ol>
+            <li><strong>Stage 1:</strong> It attempts to fulfill the <strong>Red</strong> demands for every service using standard Max-Min fairness.</li>
+            <li><strong>Stage 2:</strong> If network capacity remains, it moves to the <strong>Green</strong> demands. If the capacity is reached here, the Best-Effort traffic is capped equally across all services.</li>
+        </ol>
+
+
+
+        <h3>3. Demand Estimation</h3>
+        <p>BwE relies on <strong>Bottom-Up Demand Estimation</strong>. Each host reports not just what it is currently sending, but what it <em>could</em> send if the pipe were wider. This is calculated as:
+        <br><code>Estimated Demand = Current Throughput + Local Queue Size</code>.</p>
+
+        <p><em>Use the <strong>Capacity Controls</strong> above to simulate a fiber cut or network congestion and watch how BwE ruthlessly sheds Best-Effort traffic to protect the Guaranteed regions.</em></p>
+    </div>
+
+</body>
+</html>
