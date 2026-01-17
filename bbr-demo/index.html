@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>BBR Adaptation Dashboard</title>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                background: #0f172a;
+                color: #f8fafc;
+                margin: 20px;
+                overflow-x: hidden;
+            }
+            /* Swap Grid Layout: Plot first, Panel second */
+            .layout {
+                display: grid;
+                grid-template-columns: 1fr 340px;
+                gap: 20px;
+                max-width: 1400px;
+                margin: auto;
+            }
+
+            canvas {
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                width: 100%;
+                height: 550px;
+                display: block;
+            }
+
+            .panel {
+                background: #1e293b;
+                padding: 20px;
+                border-radius: 8px;
+                border: 1px solid #334155;
+                height: fit-content;
+                position: sticky;
+                top: 20px;
+            }
+            .metric {
+                margin-bottom: 12px;
+                border-bottom: 1px solid #334155;
+                padding-bottom: 10px;
+            }
+            .label {
+                font-size: 0.7rem;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 4px;
+            }
+            .value {
+                font-size: 1.4rem;
+                font-weight: bold;
+                font-family: "Courier New", monospace;
+            }
+
+            .controls label {
+                display: block;
+                margin: 18px 0 6px;
+                font-size: 0.85rem;
+                color: #cbd5e1;
+                font-weight: 500;
+            }
+            .knob-container {
+                background: #0f172a;
+                padding: 12px;
+                border-radius: 6px;
+                margin-top: 15px;
+                border: 1px solid #334155;
+            }
+
+            input[type="range"] {
+                width: 100%;
+                cursor: pointer;
+                accent-color: #3b82f6;
+                height: 6px;
+                border-radius: 3px;
+            }
+            button {
+                margin-top: 20px;
+                width: 100%;
+                padding: 12px;
+                cursor: pointer;
+                background: #3b82f6;
+                border: none;
+                color: white;
+                border-radius: 6px;
+                font-weight: bold;
+                transition: background 0.2s;
+            }
+            button:hover {
+                background: #2563eb;
+            }
+
+            .legend {
+                display: flex;
+                gap: 20px;
+                font-size: 0.8rem;
+                margin-bottom: 15px;
+                justify-content: flex-start;
+                padding-left: 10px;
+            }
+            .swatch {
+                width: 12px;
+                height: 12px;
+                border-radius: 2px;
+                display: inline-block;
+                margin-right: 6px;
+                vertical-align: middle;
+            }
+
+            .description-panel {
+                background: #1e293b;
+                padding: 25px;
+                border-radius: 8px;
+                border: 1px solid #334155;
+                margin-top: 20px;
+                max-width: 1400px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .description-panel h3 {
+                color: #38bdf8;
+                margin-top: 0;
+                margin-bottom: 15px;
+                font-size: 1.4rem;
+            }
+
+            .description-panel h4 {
+                color: #22c55e;
+                margin-top: 20px;
+                margin-bottom: 10px;
+                font-size: 1.1rem;
+            }
+
+            .description-panel p,
+            .description-panel li {
+                font-size: 0.95rem;
+                line-height: 1.5;
+                color: #cbd5e1;
+                margin-bottom: 10px;
+            }
+
+            .description-panel ul {
+                padding-left: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="layout">
+            <div>
+                <div class="legend">
+                    <span
+                        ><span class="swatch" style="background: #475569"></span
+                        >Physical Cap</span
+                    >
+                    <span
+                        ><span class="swatch" style="background: #22c55e"></span
+                        >BBR BtlBw Est</span
+                    >
+                    <span
+                        ><span class="swatch" style="background: #38bdf8"></span
+                        >Pacing Rate</span
+                    >
+                </div>
+                <canvas id="chart"></canvas>
+            </div>
+
+            <div class="panel">
+                <div class="metric">
+                    <div class="label" style="color: #94a3b8">
+                        Physical Link
+                    </div>
+                    <div id="m-phys" class="value" style="color: #94a3b8">
+                        0.0 Mbps
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="label" style="color: #22c55e">Model BtlBw</div>
+                    <div id="m-btlbw" class="value" style="color: #22c55e">
+                        0.0 Mbps
+                    </div>
+                </div>
+                <div class="metric">
+                    <div class="label" style="color: #38bdf8">Pacing Rate</div>
+                    <div id="m-pacing" class="value" style="color: #38bdf8">
+                        0.0 Mbps
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <label>Link Bandwidth</label>
+                    <input
+                        type="range"
+                        id="linkCap"
+                        min="5"
+                        max="120"
+                        value="60"
+                    />
+
+                    <label>Noise (Jitter)</label>
+                    <input
+                        type="range"
+                        id="noise"
+                        min="0"
+                        max="40"
+                        value="10"
+                    />
+
+                    <div class="knob-container">
+                        <label style="color: #3b82f6; margin-top: 0"
+                            >⚡ Sim Speed:
+                            <span id="speedVal">1.0x</span></label
+                        >
+                        <input
+                            type="range"
+                            id="simSpeed"
+                            min="0.1"
+                            max="4.0"
+                            step="0.1"
+                            value="1.0"
+                        />
+                    </div>
+
+                    <button id="dropBtn">Instant 50% Capacity Drop</button>
+                    <button
+                        id="resetBtn"
+                        style="background: #444; margin-top: 10px"
+                    >
+                        Reset History
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const canvas = document.getElementById("chart");
+            const ctx = canvas.getContext("2d");
+            canvas.width = 1600;
+            canvas.height = 1100;
+
+            let history = [];
+            const maxHistory = 400;
+            let bbrModelBw = 10;
+            let bwWindow = [];
+            const WINDOW_SIZE = 80;
+
+            const cycle = [1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+            let cycleIdx = 0;
+            let cycleTimer = 0;
+            let frameAccumulator = 0;
+
+            function update() {
+                const speed = parseFloat(
+                    document.getElementById("simSpeed").value,
+                );
+                document.getElementById("speedVal").innerText =
+                    speed.toFixed(1) + "x";
+
+                frameAccumulator += speed;
+                while (frameAccumulator >= 1) {
+                    processStep();
+                    frameAccumulator -= 1;
+                }
+
+                draw();
+                requestAnimationFrame(update);
+            }
+
+            function processStep() {
+                const targetCap = parseFloat(
+                    document.getElementById("linkCap").value,
+                );
+                const noiseLevel = parseFloat(
+                    document.getElementById("noise").value,
+                );
+
+                let currentPhysCap =
+                    targetCap + (Math.random() - 0.5) * noiseLevel;
+                let pacingRate = bbrModelBw * cycle[cycleIdx];
+                let actualDeliveryRate = Math.min(pacingRate, currentPhysCap);
+
+                bwWindow.push(actualDeliveryRate);
+                if (bwWindow.length > WINDOW_SIZE) bwWindow.shift();
+                bbrModelBw = Math.max(...bwWindow);
+
+                cycleTimer++;
+                if (cycleTimer > 25) {
+                    cycleTimer = 0;
+                    cycleIdx = (cycleIdx + 1) % cycle.length;
+                }
+
+                history.push({
+                    cap: targetCap,
+                    phys: currentPhysCap,
+                    model: bbrModelBw,
+                    pacing: pacingRate,
+                });
+                if (history.length > maxHistory) history.shift();
+
+                document.getElementById("m-phys").innerText =
+                    targetCap.toFixed(1) + " Mbps";
+                document.getElementById("m-btlbw").innerText =
+                    bbrModelBw.toFixed(1) + " Mbps";
+                document.getElementById("m-pacing").innerText =
+                    pacingRate.toFixed(1) + " Mbps";
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const margin = 80;
+                const drawW = canvas.width - margin * 2;
+                const drawH = canvas.height - margin * 2;
+                const maxVal = 160;
+
+                function getY(val) {
+                    return canvas.height - margin - (val / maxVal) * drawH;
+                }
+                function getX(idx) {
+                    return margin + (idx / maxHistory) * drawW;
+                }
+
+                // Grid System
+                ctx.strokeStyle = "#1e293b";
+                ctx.lineWidth = 2;
+                ctx.font = "24px sans-serif";
+                ctx.fillStyle = "#475569";
+                for (let i = 0; i <= maxVal; i += 20) {
+                    let y = getY(i);
+                    ctx.beginPath();
+                    ctx.moveTo(margin, y);
+                    ctx.lineTo(canvas.width - margin, y);
+                    ctx.stroke();
+                    ctx.fillText(i + "M", 20, y + 8);
+                }
+
+                // 1. Physical Cap (Static Baseline)
+                ctx.setLineDash([12, 12]);
+                ctx.strokeStyle = "#334155";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                history.forEach((h, i) => {
+                    i === 0
+                        ? ctx.moveTo(getX(i), getY(h.cap))
+                        : ctx.lineTo(getX(i), getY(h.cap));
+                });
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // 2. BBR Model (BtlBw)
+                ctx.strokeStyle = "#22c55e";
+                ctx.lineWidth = 6;
+                ctx.lineJoin = "round";
+                ctx.beginPath();
+                history.forEach((h, i) => {
+                    i === 0
+                        ? ctx.moveTo(getX(i), getY(h.model))
+                        : ctx.lineTo(getX(i), getY(h.model));
+                });
+                ctx.stroke();
+
+                // 3. Pacing Rate (Actual Pulse)
+                ctx.strokeStyle = "#38bdf8";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                history.forEach((h, i) => {
+                    i === 0
+                        ? ctx.moveTo(getX(i), getY(h.pacing))
+                        : ctx.lineTo(getX(i), getY(h.pacing));
+                });
+                ctx.stroke();
+            }
+
+            document.getElementById("dropBtn").onclick = () => {
+                let current = parseFloat(
+                    document.getElementById("linkCap").value,
+                );
+                document.getElementById("linkCap").value = Math.max(
+                    5,
+                    current / 2,
+                );
+            };
+
+            document.getElementById("resetBtn").onclick = () => {
+                history = [];
+                bbrModelBw = 10;
+                bwWindow = [];
+            };
+
+            update();
+        </script>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+            <h3>About this BBR Simulation</h3>
+            <p>This simulation focuses on the Control Loop of BBR. It demonstrates how BBR reacts when the "Physical Pipe" (the link capacity) suddenly changes.</p>
+
+            <h4>Key Components:</h4>
+            <ul>
+                <li><strong>The Windowed Max Filter (The Green Line):</strong> Notice that when you suddenly decrease the link capacity, the Green Line stays at the old high level for a short period. This is BBR's "memory." It doesn't want to react to a temporary glitch, so it waits until the high samples expire from its time window before it accepts that the network has permanently slowed down.</li>
+
+                <li><strong>The ProbeBW Pulse (The Blue Line):</strong> The Blue line (Actual Sending Rate) constantly "vibrates" around the Green line.</li>
+
+                <li><strong>The Up-Pulse (1.25x):</strong> BBR is asking the network: "Can you give me more?"</li>
+
+                <li><strong>The Down-Pulse (0.75x):</strong> BBR is cleaning up: "Just in case I caused a queue, I'll slow down to clear it."</li>
+            </ul>
+
+            <h4>Throughput vs. Capacity:</h4>
+            <p>If the Blue line goes above the Grey line for too long, you would see latency increase (bufferbloat). BBR keeps the Blue line perfectly hugging the Grey line to maximize throughput while keeping RTT at the absolute minimum.</p>
+        </div>
+    </body>
+</html>
